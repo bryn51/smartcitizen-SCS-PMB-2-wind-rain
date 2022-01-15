@@ -27,3 +27,5 @@ whilst 'GET' (Reading) commands send the reading as a 4 byte Float value
 In operation; the two sensors are read independently of I2C requests within the 'Loop()' function.
 Sensors are read every 'N' microseconds.
 Reading values populate reading arrays that are read when I2C makes a request; which simply fetches the latest reading values.
+This technique is used because the sensors operate at relatively slow speeds; 
+it would 'hold up' operation of the smart citizen system as a whole if the sensors were to be read in synchronism with I2C requests.
