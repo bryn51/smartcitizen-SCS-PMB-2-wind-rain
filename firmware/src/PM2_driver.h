@@ -3,8 +3,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <time.h>
-#include "pins.h"		// >>>|
-#include "SckLed.h"		// <<<|
+#include "pins.h"
+
 
 // define debug_PM2   // set debug mode for this build
 
@@ -25,9 +25,4 @@ typedef enum PM2commands {
 	GET_RAIN_INTVACC
 
 } pmcommands;
-
-
-// static const uint8_t valuesSize = 18; // (3 bytes * 6)
-
-
 

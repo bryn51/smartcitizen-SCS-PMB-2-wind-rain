@@ -15,9 +15,10 @@ typedef struct WindReading {
 
 class CalypsoWind {
 	public:
-		
+		CalypsoWind( HardwareSerial *serial);	// default constructor
 		bool begin(HardwareSerial *serial);
 		bool stop();
+		bool start();
 		floatbyte getWind_Dir();
 		floatbyte getWind_Speed();
 
@@ -27,7 +28,7 @@ class CalypsoWind {
 		windreading myreading;
 		
 		const String commandString = "$ULPI*00\r\n";
-		
+		bool readingInProgress;
 	private:
 		HardwareSerial * _windSerial;
 		bool getReadingArray();

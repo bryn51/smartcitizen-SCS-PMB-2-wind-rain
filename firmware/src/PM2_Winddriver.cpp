@@ -26,6 +26,12 @@
     The character set is US ASCII.
 
 */
+CalypsoWind::CalypsoWind( HardwareSerial *serial) {
+    _windSerial = serial;
+    myreading.winddir.f=0.00;
+    myreading.windspeed.f=0.00; 
+   
+}
 bool CalypsoWind::begin(HardwareSerial *serial)
 {
 	bool response = false;
@@ -35,7 +41,6 @@ bool CalypsoWind::begin(HardwareSerial *serial)
     */ 
     myreading.winddir.f=0.00;
     myreading.windspeed.f=0.00;
-    
 
     response = sendCommand();
 	if (response) {
@@ -48,10 +53,35 @@ bool CalypsoWind::begin(HardwareSerial *serial)
 
 }
 
+bool CalypsoWind::start()
+{
+	bool response = false;
+    response = sendCommand();
+	if (response) {
+        started=true;
+        #ifdef debug_PM2
+        SerialUSB.print("Wind  sensor was started:..");
+        #endif
+        return true;
+    } else {
+        #ifdef debug_PM2
+        SerialUSB.print("Wind  sensor did not respond to start command:..");
+        #endif
+        started=false;
+        return false;
+    }
+    #ifdef debug_PM2
+    SerialUSB.print("Wind  sensor was asked to start:..");
+    #endif
+	return true;
+}
+
 bool CalypsoWind::stop()
 {
 	started = false;
-    SerialUSB.print("Wind  sensor was casked to stop so I am faking it:..");
+    #ifdef debug_PM2
+    SerialUSB.print("Wind  sensor was casked to stop:..");
+    #endif
 	return true;
 }
 
@@ -75,6 +105,7 @@ bool CalypsoWind::sendCommand()
 }
 
 void CalypsoWind::getReading() {
+    readingInProgress=true;
     String temp;
     if (sendCommand()) {
         if (_windSerial->available() > 0) {         // when we get a response; decode it and save into Buffer
@@ -90,6 +121,7 @@ void CalypsoWind::getReading() {
             }
         }
     }
+    readingInProgress=false;
 }
 
 // Return the Reading Values

@@ -60,86 +60,61 @@ To begin we set the operating mode that we require, assuming the device had a co
 3. Set Metric
 4. Reset Accumulation Counter
 */
+RadeonRain::RadeonRain(HardwareSerial *serial) {
+	_rainSerial = serial;
+	myreading.accum.f=0.00;
+    myreading.totalacc.f=0.00;
+    myreading.totalacc.f=0.00;
+    myreading.intervalacc.f=0.00;
+}
 bool RadeonRain::begin(HardwareSerial *serial)
 {
 	//bool response = false;
 	_rainSerial = serial;
-	char myCommand;
-	char expectedResponse;
-	uint32_t timer4;
-	uint32_t timeout=20;
-	char responseStr[10];
-	int8_t responsechars=0;
-	uint8_t acceptedResponses=0;
+	
 	
 	myreading.accum.f=0.00;
     myreading.totalacc.f=0.00;
     myreading.totalacc.f=0.00;
     myreading.intervalacc.f=0.00;
 
+	if (start()) {
+		started=true;
+	} else {
+		started=false;
+	}
+	return started;
+}
+
+bool RadeonRain::start()
+{
+	char myCommand;
 	/*
 		Send a series of comands intended to ensure the device is set up correctly
 	*/
+	emptyReadBuffer();	// if the device still has a reading in its buffer
+	// it is inclined to send the reading instead of response to a startup command
+	// so we just read in the buffer until its empty ...
+
+	// now proceed to send startup command set.
 	for (int i=0;i<numStartupCommands;i++) {
 		myCommand=StartupCommandResponseAry[i].command;
-		
-		expectedResponse=StartupCommandResponseAry[i].response;
-		
-		responsechars=0;
-		responseStr[0] = '\0';
-		while (responsechars == 0) {
-			_rainSerial->print(myCommand);
-			_rainSerial->print('\n');
-			timer4=millis();
-			delay(10);
-			while (_rainSerial->available()==0) {
-				if (millis() - timer4 > timeout) {
-					started=false;
-					break;
-				}
-				delay(1);
-			}
-			while (_rainSerial->available() > 0){
-				responseStr[responsechars++] = _rainSerial->read();
-			}
-		}
-		switch (responsechars-1){
-			case -1: {
-				if (expectedResponse=='\0') {
-					acceptedResponses++;
-				}
-				break;
-			}
-			case 0: {
-				if (expectedResponse=='\0') {
-					acceptedResponses++;
-				}
-				break;
-			}
-			case 1: 
-			case 2:
-			case 3: 
-			default: {
-				for (int i=0;i<responsechars;i++) {
-					if (responseStr[i] == expectedResponse) {
-						acceptedResponses++;
-						responseStr[i]='\0';
-						break;
-					}
-				}
-				break;
+		// send the command
+		_rainSerial->print(myCommand);
+		_rainSerial->print('\n');
+		delay(10);		// allow a short moment for the device to respond
+		// really; we do not care what the response is.
+		delay(1);
+		if (_rainSerial->available()) {
+			// if the read buffer gets stuff in it; empty the buffer
+			while (_rainSerial->available()) {
+				_rainSerial->read();		// read the data and discard it.
 			}
 		}
 	}
-	if (acceptedResponses == numStartupCommands) {
-		started=true;
-		return true;
-	} else {
-		started=false;
-		return false;
-	}
+	return true;	
+	
 }
-
 bool RadeonRain::stop()
 {
 	started = false;
@@ -147,6 +122,16 @@ bool RadeonRain::stop()
 	return true;
 }
 
+void RadeonRain::emptyReadBuffer() {
+	// if the Serial.Read still has characters in the buffer from a previous command
+	// then the rain gauge may send the contents instead of the new request Found during testing).
+	//char tmp;
+	while (_rainSerial->available() > 0){
+		_rainSerial->read();
+	}
+	return;
+
+}
 bool RadeonRain::sendCommand(char commandString, char responseString) 
 {
 	bool response = false;
@@ -173,7 +158,7 @@ bool RadeonRain::sendCommand(char commandString, char responseString)
 				if (millis() - timer3 > timeout) {
 					break;
 				}
-				delay(1);
+				delayMicroseconds(100);
 			}
 			myReading=0;
 			if (_rainSerial->available() > 0) {
@@ -184,7 +169,7 @@ bool RadeonRain::sendCommand(char commandString, char responseString)
 					} else {
 						response= false;
 					}
-					delay(100);
+					delayMicroseconds(100);
 					break;
 				}
 			}
@@ -195,6 +180,7 @@ bool RadeonRain::sendCommand(char commandString, char responseString)
 }
 
 void RadeonRain::getReading() {
+	readingInProgress=true;
 	char commandString='R';
 	uint32_t timer5=0;
 	uint32_t timeout=1000;
@@ -226,6 +212,7 @@ void RadeonRain::getReading() {
 			myreading.intervalacc.f=0.00;
 		}
 	}
+	readingInProgress=false;
 	return;
 }
 
