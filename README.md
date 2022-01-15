@@ -22,4 +22,8 @@ The readings supported include:
 	"GET_RAIN_INTVACC"
 
 Start and Stop commands respond with an 'Ack' = 1
-Reading commands send the reading as a 4 byte Float value
+whilst 'GET' (Reading) commands send the reading as a 4 byte Float value
+
+In operation; the two sensors are read independently of I2C requests within the 'Loop()' function.
+Sensors are read every 'N' microseconds.
+Reading values populate reading arrays that are read when I2C makes a request; which simply fetches the latest reading values.
