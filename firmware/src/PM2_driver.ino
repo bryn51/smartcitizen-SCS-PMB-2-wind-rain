@@ -21,7 +21,7 @@
 
 const long delaytime = 10;
 
-// # define debug_PM2
+// ; # define debug_PM2
 
 // Hardware Serial UART GroveGPIO  (Grove #3 on PM Board) (9600 - Rain)
 /*
@@ -83,11 +83,10 @@ String CommandLiterals[] {
 	"GET_RAIN_ACC",
 	"GET_RAIN_EVENTACC",
 	"GET_RAIN_TOTALACC",
-	"GET_RAIN_INTVACC"
+	"GET_RAIN_INTVACC",
+	"RAIN_RESETACCUM",
+	"RAIN_CHECK"
 };
-
-void receiveEvent(int howMany);
-void requestEvent();
 
 // the setup function runs once when you press reset or power the board
 uint32_t loopctr55=0;
@@ -95,7 +94,7 @@ uint32_t loopctr55=0;
 #define I2C_ADDRESS 0x03
 
 void setup() {
-	readingRefreshInterval=1*60*50;// 1 minutes
+	readingRefreshInterval=5*1000000; // (microseconds) (5 seconds)
 
 	uint8_t loopctr=0;
 	uint8_t loopctr2=0;
@@ -161,7 +160,7 @@ void setup() {
 	timer1=micros();
 	timer2=micros();
 
-	byte addr=0x03;		// tried to use I2C_ADDRESS here but the device would not respond on the bus.
+	const byte addr=0x03;		// tried to use I2C_ADDRESS here but the device would not respond on the bus.
 	Wire.begin(addr);   //  specifying a Slave Address sets I2C into Slave Mode
 									// the following interrupt driven functions are needed to allow
 									// Slave mode operation on the I2C bus (otherwise requests from the Mat=ster cannot be serviced)
@@ -185,18 +184,43 @@ void setup() {
 void receiveEvent(int howMany)
 {
 	command.myint = 99;
-	#ifdef debug_PM2
-	SerialUSB.print("Received an I2C Event bytes requested: ");
-	SerialUSB.println(numBytes);
-	#endif
-	if (Wire.available()) command.b = Wire.read();	// one byte is assumed
-	#ifdef debug_PM2
-	SerialUSB.print("Received an I2C Event command: ");
-	SerialUSB.println(CommandLiterals[command.myint]);
-	#endif
+	uint8_t i=0;
+	uint32_t timer=micros();
+	uint32_t timeout=100;
+	//#ifdef debug_PM2
+	SerialUSB.print("Received an I2C Event. Bytes requested: ");
+	SerialUSB.println(howMany);
+	//#endif
+	if (howMany > 0) {
+		while (!Wire.available()) {
+			delayMicroseconds(1);
+			if (micros()-timer > timeout) break;
+		}
+		while (Wire.available()) {
+			command.b = Wire.read();	// one byte is not assumed but its the most likely case
+		}
+	}
+	//#ifdef debug_PM2
+	if (command.myint !=99) {
+		SerialUSB.print("Received an I2C Event command: ");
+		SerialUSB.println(CommandLiterals[command.myint]);
+	}
+	//#endif
 	
 	switch(command.myint) {
-		
+		case START_WIND: {
+			if (wind.start()) {
+				windRunning=true;
+			}
+			wichCommand=command;
+			break;
+		}case START_RAIN: {
+			if (rain.start()) {
+				rainRunning=true;
+			}
+			wichCommand=command;
+			break;
+		}
 		case STOP_WIND:	{
 			if (wind.stop()) {
 				windRunning=false;
@@ -211,36 +235,29 @@ void receiveEvent(int howMany)
 			wichCommand=command;
 			break;
 		}
-		case START_RAIN: {
-			if (rain.start()) {
-				rainRunning=true;
-			}
+		
+		case RAIN_RESETACCUM: {
+			rain.resetAccum();
 			wichCommand=command;
 			break;
 		}
-		case START_WIND: {
-			if (wind.start()) {
-				windRunning=true;
-			}
-			wichCommand=command;
-			break;
-		}
+		
 		case GET_WIND_DIR:
 		case GET_WIND_SPEED:
 		case GET_RAIN_ACC:
 		case GET_RAIN_EVENTACC:
 		case GET_RAIN_TOTALACC:
 		case GET_RAIN_INTVACC:
+		case RAIN_CHECK: 
 		{
 			wichCommand=command;
 			break;
 		}
 		default: {
-			wichCommand.myint=-1;
+			wichCommand.myint=99;
 			break;
 		}
 	}
-	//led.tick();
 }
 
 // requestEvent INTERRUPT FROM i2c PORT (Master asks slave to send data)
@@ -249,20 +266,22 @@ void requestEvent()
 	/*
 		Respond to a request from the Master; typically: Ack (1); Nack (0) (1 byte) or a Reading value (4 bytes)
 	*/
-	#ifdef debug_PM2
+	//#ifdef debug_PM2
 	SerialUSB.print("Servicing an I2C request for command: ");
 	SerialUSB.println(CommandLiterals[wichCommand.myint]);
-	#endif
+	//#endif
 	floatbyte rdg;
 	switch (wichCommand.myint) {
 		
 		case START_WIND: {
 			if (wind.started) {
-				Wire.write(1);
+				Wire.write(1);		// ack
+				SerialUSB.println("Ack sent for start wind");
 				rdg.f=0.00;
 				windRunning=true;
 			} else {
-				Wire.write(0);
+				SerialUSB.println("wind is not started: Nack sent");
+				Wire.write(0);		// nack
 			}
 			break;
 		}
@@ -302,10 +321,13 @@ void requestEvent()
 		case START_RAIN: {
 			if (rain.started) {
 				Wire.write(1);
+				SerialUSB.println("Ack sent for start rain");
 				rainRunning=true;
 			} else {
 				rain.started=false;
 				Wire.write(0);
+				SerialUSB.println("rain is not started: Nack sent");
+				
 			}
 			rdg.f=0.00;
 			
@@ -366,7 +388,21 @@ void requestEvent()
 			}	
 			break;
 		}
-		default: break;
+		case RAIN_CHECK: {
+			if (rain.checkStarted()) {
+				Wire.write(1);
+			} else {
+				Wire.write(0);
+			}
+		}
+		case RAIN_RESETACCUM: {
+			Wire.write(1);
+			break;
+		}
+		default: {
+			Wire.write(1); // ack anyway
+			break;
+		}
 	}
 	#ifdef debug_PM2
 	SerialUSB.print("Reading value sent: ");
@@ -377,7 +413,7 @@ void requestEvent()
 	
 }
 /*
-	The Rain Gauge runs at 9600 bpa :  (1041 uS per bit: 937.5 uS per byte (8 bits + stop))
+	The Rain Gauge runs at 9600 bps :  (1041 uS per bit: 937.5 uS per byte (8 bits + stop))
 	Assuming immediate response to a Poll:
 	characters:  Poll = R+ CR LF + Response: |Acc 0.000 in, EventAcc 0.000 in, TotalAcc 0.000 in, RInt 0.000 iph| + CR LF
 	== 71 characters =~ (iro) 66562.5 uS for a complete Poll
@@ -410,7 +446,9 @@ void requestEvent()
 uint32_t myctr=0;
 void loop() {
 	delay(100);
+	#ifdef debug_PM2
 	SerialUSB.println(myctr);
+	#endif
 	if (wind.started && windRunning) {
 		if (micros() - timer1 > readingRefreshInterval) {
 			#ifdef debug_PM2
@@ -426,7 +464,7 @@ void loop() {
 	#endif
 	}
 
-	if (rain.started && rainRunning) {
+	if (rain.checkStarted() && rainRunning) {
 		if (micros() - timer2 > readingRefreshInterval) {
 			#ifdef debug_PM2
 			SerialUSB.println("Rain Reading .........");

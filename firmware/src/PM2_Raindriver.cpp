@@ -2,11 +2,11 @@
 #include "PM2_Raindriver.h"
 
 /*
-Radeon RG15 Rain Gauge:  Commands and responses documentation from Instructions leaflet.
+Radeon RG15 Rain Gauge:  Commands and responses documentation taken from User Guide leaflet.
 RS232 Communication:
 The RG-15 supports communication through RS-232 at 3.3V, more information can be found at www.rainsensors.com/rg-9-15-protocol
-All lines are terminated with a carriage return followed by a new
-line, this is used for all output. But only the new line is required for
+All lines are terminated with a carriage return followed by a newline, 
+this is used for all output. But only the new line is required for
 commands. The command is processed following the new line.
 Cmd (case insensitive) Description, example response
 A Read the accumulation data
@@ -53,13 +53,7 @@ X Enable External TB Input
 Y Disable External TB Input
 
 */
-/*
-To begin we set the operating mode that we require, assuming the device had a complete reset prior.
-1. Set Polling Mode
-2. Set High Resolutiuon
-3. Set Metric
-4. Reset Accumulation Counter
-*/
+
 RadeonRain::RadeonRain(HardwareSerial *serial) {
 	_rainSerial = serial;
 	myreading.accum.f=0.00;
@@ -78,15 +72,21 @@ bool RadeonRain::begin(HardwareSerial *serial)
     myreading.totalacc.f=0.00;
     myreading.intervalacc.f=0.00;
 
-	if (start()) {
+	if (slowStart()) {
 		started=true;
 	} else {
 		started=false;
 	}
 	return started;
 }
-
-bool RadeonRain::start()
+/*
+To begin we set the operating mode that we require, assuming the device had a complete reset prior.
+1. Set Polling Mode
+2. Set High Resolutiuon
+3. Set Metric
+4. Reset Accumulation Counter
+*/
+bool RadeonRain::slowStart()
 {
 	char myCommand;
 	/*
@@ -100,11 +100,9 @@ bool RadeonRain::start()
 	for (int i=0;i<numStartupCommands;i++) {
 		myCommand=StartupCommandResponseAry[i].command;
 		// send the command
-		_rainSerial->print(myCommand);
-		_rainSerial->print('\n');
-		delay(10);		// allow a short moment for the device to respond
+		_rainSerial->println(myCommand);
+		delay(1);		// allow a 1 byte-time (937 uS ~ 1 mS) moment for the device to respond
 		// really; we do not care what the response is.
-		delay(1);
 		if (_rainSerial->available()) {
 			// if the read buffer gets stuff in it; empty the buffer
 			while (_rainSerial->available()) {
@@ -114,6 +112,16 @@ bool RadeonRain::start()
 	}
 	return true;	
 	
+}
+bool RadeonRain::start()
+{
+	started = true;
+	
+	return true;
+}
+bool RadeonRain::checkStarted()
+{
+	return started;
 }
 bool RadeonRain::stop()
 {
@@ -125,13 +133,27 @@ bool RadeonRain::stop()
 void RadeonRain::emptyReadBuffer() {
 	// if the Serial.Read still has characters in the buffer from a previous command
 	// then the rain gauge may send the contents instead of the new request Found during testing).
-	//char tmp;
+	//char tmp;  In practice this does not always have the desired effect;
 	while (_rainSerial->available() > 0){
 		_rainSerial->read();
 	}
+	_rainSerial->read();
 	return;
 
 }
+
+void RadeonRain::resetAccum() {
+	char commandString='O';
+
+	emptyReadBuffer();
+	delayMicroseconds(1);
+	_rainSerial->println(commandString); 	// send the 'Read' command to the device
+
+	// we are not expecting any response back from this command
+	delayMicroseconds(10);
+}
+
+/*
 bool RadeonRain::sendCommand(char commandString, char responseString) 
 {
 	bool response = false;
@@ -176,10 +198,74 @@ bool RadeonRain::sendCommand(char commandString, char responseString)
 		}
 	}
 	return response;
-
 }
-
+*/
 void RadeonRain::getReading() {
+	readingInProgress=true;
+	//emptyReadBuffer();
+	char commandString='R';
+	uint32_t timer5=0;
+	uint32_t timeout=1000;
+	String response;
+	
+	_rainSerial->println(commandString); 	// send the 'Read' command to the device
+	delay(1);					// wait for it to start sending and transmission delay ( calcuated to be 66562.5 uS overall )
+	// it is assumed there is a certain finite time following a command until the device sends its response (937.5 uS per byte for 1st byte).
+	while (!_rainSerial->available()) {
+		if (micros() - timer5 > timeout) {
+			break;
+		}
+		delayMicroseconds(10);		// waiting a little longer (perhaps its busy)
+	}
+	if (_rainSerial->available()) {
+		response = _rainSerial->readStringUntil('\n');		// read the whole line of data at once until the end of line char
+
+		//SerialUSB.print("Rain Reading received (raw)|");
+		//SerialUSB.print(response);
+		//SerialUSB.println("|");
+
+		if (response.startsWith("Acc")) {							// just checking ...
+			char acc[10], eventAcc[10], totalAcc[10], rInt[10], unit[5],unit2[5], unit3[5], unit4[5];
+			char A[9], B[9],C[9],D[9];
+			// split the string using sscanf
+			// the compiler doth protest too much: it seems to work anyway
+			sscanf (response.c_str(), "%s %s %[^,] , %s %s %[^,] , %s %s %[^,] , %s %[0-9.]s %[mmph|mh|mAcc^\n]",&A, &acc, &unit, &B,&eventAcc,&unit2, &C,&totalAcc,&unit3, &D, &rInt,&unit4);
+
+			//SerialUSB.println(acc);
+			//SerialUSB.println(eventAcc);
+			//SerialUSB.println(totalAcc);
+			//SerialUSB.println(rInt);
+
+			// “Acc 0.000 in, EventAcc 0.000 in, TotalAcc 0.000 in, RInt 0.000 iph\r(\n)”
+			/*  Test strings
+			String response1 = "Acc 1 mm, EventAcc 2 xm, TotalAcc 3 mm, RInt 4 mmph\r";
+			String response2 = "Acc 0.01 mm, EventAcc 0.02 xm, TotalAcc 0.03 mm, RInt 0.04 mmph\r";
+			String response3 = "Acc 99.010 mm, EventAcc 999.202 mm, TotalAcc 9998.033 mm, RInt 199.201 mmph\r";
+			String response4 = "Acc 1.010 mm, EventAcc 199.202 mm, TotalAcc 898.033 mm, RInt 50.201 mmph\r";
+			String response5 = "Acc 9999.010 mm, EventAcc 9999.202 mm, TotalAcc 9999.033 mm, RInt 9999.201 mmph\r";
+			*/
+
+			// copy received data into myreading buffer
+			myreading.accum.f=atof(acc);
+			myreading.eventacc.f=atof(eventAcc);
+			myreading.totalacc.f=atof(totalAcc);
+			myreading.intervalacc.f=atof(rInt);
+				
+		}
+	/*  Do NOT set the reading to zero; just leave it there (do not do this below)
+	} else {
+		myreading.accum.f=float(0);
+		myreading.eventacc.f=float(0);
+		myreading.totalacc.f=float(0);
+		myreading.intervalacc.f=float(0);
+	*/
+	}
+	readingInProgress=false;
+}
+/*  This (below) is an alternative getReading function.  It is less efficient than the one adopted above */
+
+/*
+void RadeonRain::getReadingOld() {
 	readingInProgress=true;
 	char commandString='R';
 	uint32_t timer5=0;
@@ -215,7 +301,7 @@ void RadeonRain::getReading() {
 	readingInProgress=false;
 	return;
 }
-
+*/
 // Return the Reading Values"
 floatbyte RadeonRain::getAccReading(){  // eg "34"
 	
@@ -238,12 +324,16 @@ floatbyte RadeonRain::getIntervalReading(){
 }
 /*
 decoding: Response:
+Ideally:
 	“Acc 0.000 in, EventAcc 0.000 in, TotalAcc 0.000 in, RInt 0.000 iph”
+In practice;; we sometimes find two readings are sent by the device; one on top of the other
+all jumbled up.
 	(inches measurements might be other units such as mm)
 	(not sure how the device handles qty > 9 units) might me > 9.999 > 10.01 maybe
 	(this code will handle numbers from 0.000 up to 99999.999 mm (length of 9))
 	The buffer array allows for 13 rows of 10 chars (including NULL termination)
 */
+/*
 bool RadeonRain::getReadingArray() 
 {
 
@@ -307,3 +397,4 @@ bool RadeonRain::getReadingArray()
     }
 	
 }
+*/
