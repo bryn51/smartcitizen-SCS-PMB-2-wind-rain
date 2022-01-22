@@ -27,14 +27,18 @@ class RadeonRain {
 		bool begin(HardwareSerial *serial);
 		bool stop();
 		bool start();
+		bool slowStart();
 		void getReading();
+		//void getReadingOld();
+		void resetAccum();
+		bool checkStarted();
 		floatbyte getAccReading();
 		floatbyte getEventAccReading();
 		floatbyte getTotalAccReading();
 		floatbyte getIntervalReading();
 		bool started=false;
 		
-		RainReading myreading;
+		RainReading myreading;		// temporary storage for readings between Serial.Read and I2C fetching
 		CommandResponse mycomands;
 
 		const CommandResponse StartupCommandResponseAry[4] = {
@@ -43,15 +47,15 @@ class RadeonRain {
 			{'M','m'},		// Metric
 			{'O','\0'}		// reset accumulation counter
 		};
-		int8_t numStartupCommands=1;
+		int8_t numStartupCommands=4;
 		bool readingInProgress;
 	private:
 		HardwareSerial * _rainSerial;
 		
-		bool getReadingArray();
-		char readingArray[13][10];  // “Acc 0.000 in, EventAcc 0.000 in, TotalAcc 0.000 in, RInt 0.000 iph” 
+		//bool getReadingArray();
+		//char readingArray[13][10];  // “Acc 0.000 in, EventAcc 0.000 in, TotalAcc 0.000 in, RInt 0.000 iph” 
 									//  numbers from 0.000 up to 99999.999 mm (length of 9))
-		bool sendCommand(char commandString, char responseString);
+		//bool sendCommand(char commandString, char responseString);
 		void emptyReadBuffer();
 		#define bufferSize 90
 		char buffer[bufferSize]=""; // Buffer that stores characters read from the RG-15

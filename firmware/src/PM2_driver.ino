@@ -2,11 +2,11 @@
 	Main program for handling of Wind and Rain sensors.'
 	This device is an I2C slave.
 	The PM 2 Board can  be commanded to stop and start the Wind and Rain sensors.
-	The PM 2 Board takes readings every (typ 3) minutes on its own schedule
+	The PM 2 Board takes readings every (typically 5) minutes on its own schedule
 	The PM 2 Board is polled once in each cycle of readings for each device by the Master 
 	; wherein it delivers the most recent readings 
-	
-	 
+	There is one request poll for each measurement reading of which there are 6.
+		 
 */
 #include "wiring_private.h"
 #include <Arduino.h>
@@ -15,22 +15,26 @@
 #include "pins.h"
 #include "PM2_driver.h"
 
-#include "pins.h"
 #include "PM2_Raindriver.h"
 #include "PM2_Winddriver.h"
 
-const long delaytime = 10;
+
 
 // ; # define debug_PM2
 
 // Hardware Serial UART GroveGPIO  (Grove #3 on PM Board) (9600 - Rain)
 /*
 Special Note: On the PM Board for GPIO Port; 
-      Tx Wire (Grove = Yellow - Pin 1) appears on PIN 22
-      Rx Wire (Grove = White - Pin 2) appears on PIN 38
-      Which is opposite to the Grove Standard
-      The Grove connector has 2 signal wires; the standard is: Yellow on Pin 1 (Rx); White on Pin 2. (Tx)
-      This therefore requires an unstandard form of wiring that crosses Tx and Rx.
+	Tx Wire (Grove = Yellow - Pin 1) appears on PIN 22
+	Rx Wire (Grove = White - Pin 2) appears on PIN 38
+	Which is opposite to the Grove Standard
+	The Grove connector has 2 signal wires; the standard is: Yellow on Pin 1 (Rx); White on Pin 2. (Tx)
+	This therefore requires an unstandard form of wiring that crosses Tx and Rx.
+
+Secondary note: The default Baud rate of 9600 is slow; but we do not use higher baud rates because
+	it is unclear from documentation as to whether settings like this are preserved across power cycles.
+	This would make baud rate indeterminate and introduce complications in the code: namely having to reset 
+	baud rate for serial port.
 */
 Uart SerialGroveGPIO (&sercom4, GPIO1,GPIO0, SERCOM_RX_PAD_1, UART_TX_PAD_0 );
 void SERCOM4_Handler() {
@@ -51,28 +55,26 @@ void SERCOM1_Handler() {
   SerialGrove.IrqHandler();
 }
 
-RadeonRain rain(&SerialGroveGPIO);
+RadeonRain rain(&SerialGroveGPIO);		// constructor executes
 CalypsoWind wind(&SerialGrove);
-//SckLed led;
 
-union ibyte {
+union ibyte {				// used for I2C commands
 	uint8_t myint;
 	byte b;
 };
 
-extern floatbyte fbyte;
+extern floatbyte fbyte;		// used for readings.  Loaded as a float; read as a byte array [4]
 
 ibyte wichCommand;
 ibyte command;
-// int wcommand;
 	
 uint32_t timer1=0;
 uint32_t timer2=0;
-uint32_t readingRefreshInterval;  // I2C Master Command received
+uint32_t readingRefreshInterval; 
 bool windRunning=false;
 bool rainRunning=false;
 
-String CommandLiterals[] {
+String CommandLiterals[] {		// used for debug only
 	"none",
 	"START_WIND",
 	"STOP_WIND",
@@ -88,87 +90,61 @@ String CommandLiterals[] {
 	"RAIN_CHECK"
 };
 
-// the setup function runs once when you press reset or power the board
-uint32_t loopctr55=0;
-
-#define I2C_ADDRESS 0x03
+#define I2C_ADDRESS 0x03		// its in the reserved address space; unlikely to be duplicate with any commercial device.
 
 void setup() {
-	readingRefreshInterval=5*1000000; // (microseconds) (5 seconds)
 
-	uint8_t loopctr=0;
-	uint8_t loopctr2=0;
+	uint32_t setuptimer=micros();
+	readingRefreshInterval=5*1000000; // (microseconds) (5 seconds): How often to take readings from the serial devices
 
-	// RGB led
-	//led.setup();
-	delay(1);
-	//led.update(led.WHITE,led.PULSE_STATIC);
-
-	// initialize serial communication at 19200 bits per second:
+	// initialize serial communication at 115200 bits per second:  (Debugging)
 	SerialUSB.begin(115200);
-	while (!SerialUSB) {
-		delay(1);
-	}
+	//while (!SerialUSB) {
+	//	delay(1);
+	//}
 
-	SerialGrove.begin(38400);
+	SerialGrove.begin(38400);		// wind
 	pinPeripheral(RX0, PIO_SERCOM);
 	pinPeripheral(TX0, PIO_SERCOM); 
 	while (!SerialGrove) {
 		delay(1);
 	}
-	SerialGroveGPIO.begin(9600);
+	SerialGroveGPIO.begin(9600);	// rain
 	pinPeripheral(GPIO0, PIO_SERCOM_ALT);   // tell the MUX unit what kind of port
 	pinPeripheral(GPIO1, PIO_SERCOM_ALT);
 	while (!SerialGroveGPIO) {
 		delay(1);
 	}
-	#ifdef debug_PM2
-	SerialUSB.println("=========================");
-	SerialUSB.println("Initialised Serial Ports");
-	#endif
-	while (!wind.started && loopctr < 20) {
-		wind.begin(&SerialGrove);
-		loopctr++;
-	}
+	
+	wind.begin(&SerialGrove);
 	if (wind.started) {
-		#ifdef debug_PM2
-		SerialUSB.println("Initialised Anenometer");
-		#endif
 		windRunning=true;
-	#ifdef debug_PM2
 	} else {
 		SerialUSB.println("Anenometer unavailable");
-	#endif
 	}
 
-
-	while (!rain.started && loopctr2 < 10) {
-		rain.begin(&SerialGroveGPIO); 
-		loopctr2++;
-	}
+	rain.begin(&SerialGroveGPIO); 
 	if (rain.started){
-		#ifdef debug_PM2
-		SerialUSB.println("Initialised Rain Guage");
-		#endif
 		rainRunning=true;
-	#ifdef debug_PM2
 	} else {
 		SerialUSB.println("Rain Guage unavailable");
-	#endif
+	
 	}
 	
-	timer1=micros();
+	timer1=micros();		// this is just initialisation 
 	timer2=micros();
 
-	const byte addr=0x03;		// tried to use I2C_ADDRESS here but the device would not respond on the bus.
-	Wire.begin(addr);   //  specifying a Slave Address sets I2C into Slave Mode
+	const byte addr=0x03;			// tried to use I2C_ADDRESS here but the device would not respond on the bus.
+	Wire.begin(addr);   			//  specifying a Slave Address sets I2C into Slave Mode
 									// the following interrupt driven functions are needed to allow
 									// Slave mode operation on the I2C bus (otherwise requests from the Mat=ster cannot be serviced)
+	// interrupt service routines for I2C communication
 	Wire.onReceive(receiveEvent);	// Registers a function to be called when a slave device receives a transmission from the master.
 	Wire.onRequest(requestEvent);	// Register a function to be called when a master requests data from this slave device.
 	// Slave mode operation and interrupt driven comms means that theoretically other operations will halt part way through
 	// and this may cause a loss of data during serial read operations in particular.
 	
+	SerialUSB.println("PM#2 Board is ready");
 	#ifdef debug_PM2
 	SerialUSB.print("Wire was started in Slave mode at address:...");
 	SerialUSB.println(addr);
@@ -176,7 +152,11 @@ void setup() {
 	SerialUSB.print("Timer Interval:");
 	SerialUSB.println(readingRefreshInterval);
 	#endif
-	loopctr=0;
+
+	SerialUSB.print("setup() execution took: ");
+	SerialUSB.print(micros()-setuptimer);
+	SerialUSB.println(" uS");
+	
 }
 
 
@@ -184,7 +164,6 @@ void setup() {
 void receiveEvent(int howMany)
 {
 	command.myint = 99;
-	uint8_t i=0;
 	uint32_t timer=micros();
 	uint32_t timeout=100;
 	//#ifdef debug_PM2
@@ -266,9 +245,10 @@ void requestEvent()
 	/*
 		Respond to a request from the Master; typically: Ack (1); Nack (0) (1 byte) or a Reading value (4 bytes)
 	*/
-	//#ifdef debug_PM2
-	SerialUSB.print("Servicing an I2C request for command: ");
-	SerialUSB.println(CommandLiterals[wichCommand.myint]);
+	//#ifdef debug_PM2  : Inclusion of the serial print comands will introduce a delay which could cause a timeout 
+	// or hoold up the bus.
+	//SerialUSB.print("Servicing an I2C request for command: ");
+	//SerialUSB.println(CommandLiterals[wichCommand.myint]);
 	//#endif
 	floatbyte rdg;
 	switch (wichCommand.myint) {
@@ -400,7 +380,7 @@ void requestEvent()
 			break;
 		}
 		default: {
-			Wire.write(1); // ack anyway
+			// Wire.write(1); // ack anyway
 			break;
 		}
 	}
@@ -445,15 +425,17 @@ void requestEvent()
 // every readingRefreshInterval uS.
 uint32_t myctr=0;
 void loop() {
-	delay(100);
+	SerialUSB.println("PM#2 Board is idling in the  Reading Loop");
+	delay(500);
 	#ifdef debug_PM2
 	SerialUSB.println(myctr);
 	#endif
+	
 	if (wind.started && windRunning) {
 		if (micros() - timer1 > readingRefreshInterval) {
-			#ifdef debug_PM2
+			//#ifdef debug_PM2
 			SerialUSB.println("Wind Reading ..........");
-			#endif
+			//#endif
 			wind.getReading(); // send /receive 35 bytes at 38400 bps + processing time
 			timer1 = micros();
 		}
@@ -466,9 +448,9 @@ void loop() {
 
 	if (rain.checkStarted() && rainRunning) {
 		if (micros() - timer2 > readingRefreshInterval) {
-			#ifdef debug_PM2
+			//#ifdef debug_PM2
 			SerialUSB.println("Rain Reading .........");
-			#endif
+			//#endif
 			rain.getReading(); // 71 bytes @ 9600 bps + processing time
 			timer2 = micros();
 		}

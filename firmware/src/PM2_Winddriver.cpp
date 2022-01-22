@@ -34,7 +34,7 @@ CalypsoWind::CalypsoWind( HardwareSerial *serial) {
 }
 bool CalypsoWind::begin(HardwareSerial *serial)
 {
-	bool response = false;
+	//bool response = false;
 	_windSerial = serial;
     /*
         send the reading command; and check for a response, then we can be certain the device is operating
@@ -42,15 +42,8 @@ bool CalypsoWind::begin(HardwareSerial *serial)
     myreading.winddir.f=0.00;
     myreading.windspeed.f=0.00;
 
-    response = sendCommand();
-	if (response) {
-        started=true;
-        return true;
-    } else {
-        started=false;
-        return false;
-    }
-
+    started=true;
+    return started;
 }
 
 bool CalypsoWind::start()
