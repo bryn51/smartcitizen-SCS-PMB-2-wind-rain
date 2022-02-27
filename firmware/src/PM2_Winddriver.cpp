@@ -41,6 +41,8 @@ bool CalypsoWind::begin(HardwareSerial *serial)
     */ 
     myreading.winddir.f=0.00;
     myreading.windspeed.f=0.00;
+    
+    start();
 
     started=true;
     return started;
@@ -52,20 +54,18 @@ bool CalypsoWind::start()
     response = sendCommand();
 	if (response) {
         started=true;
-        #ifdef debug_PM2
+       
         SerialUSB.print("Wind  sensor was started:..");
-        #endif
+       
         return true;
     } else {
-        #ifdef debug_PM2
+       
         SerialUSB.print("Wind  sensor did not respond to start command:..");
-        #endif
+       
         started=false;
         return false;
     }
-    #ifdef debug_PM2
-    SerialUSB.print("Wind  sensor was asked to start:..");
-    #endif
+   
 	return true;
 }
 

@@ -99,17 +99,22 @@ void setup() {
 
 	// initialize serial communication at 115200 bits per second:  (Debugging)
 	SerialUSB.begin(115200);
-	//while (!SerialUSB) {
-	//	delay(1);
-	//}
+	// RGB led
+	pinMode(pinRED, OUTPUT);
+	pinMode(pinGREEN, OUTPUT);
+	pinMode(pinBLUE, OUTPUT);
 
-	SerialGrove.begin(38400);		// wind
+	digitalWrite(pinBLUE, HIGH);
+	digitalWrite(pinGREEN, LOW);
+	digitalWrite(pinRED, HIGH);
+
+	SerialGrove.begin(38400);		// wind  (Grove 3)
 	pinPeripheral(RX0, PIO_SERCOM);
 	pinPeripheral(TX0, PIO_SERCOM); 
 	while (!SerialGrove) {
 		delay(1);
 	}
-	SerialGroveGPIO.begin(9600);	// rain
+	SerialGroveGPIO.begin(9600);	// rain  (Grove 4)
 	pinPeripheral(GPIO0, PIO_SERCOM_ALT);   // tell the MUX unit what kind of port
 	pinPeripheral(GPIO1, PIO_SERCOM_ALT);
 	while (!SerialGroveGPIO) {
@@ -145,13 +150,6 @@ void setup() {
 	// and this may cause a loss of data during serial read operations in particular.
 	
 	SerialUSB.println("PM#2 Board is ready");
-	#ifdef debug_PM2
-	SerialUSB.print("Wire was started in Slave mode at address:...");
-	SerialUSB.println(addr);
-	
-	SerialUSB.print("Timer Interval:");
-	SerialUSB.println(readingRefreshInterval);
-	#endif
 
 	SerialUSB.print("setup() execution took: ");
 	SerialUSB.print(micros()-setuptimer);
@@ -250,6 +248,9 @@ void requestEvent()
 	//SerialUSB.print("Servicing an I2C request for command: ");
 	//SerialUSB.println(CommandLiterals[wichCommand.myint]);
 	//#endif
+	digitalWrite(pinBLUE, HIGH);
+	digitalWrite(pinGREEN, HIGH);
+	digitalWrite(pinRED, LOW);
 	floatbyte rdg;
 	switch (wichCommand.myint) {
 		
@@ -380,17 +381,9 @@ void requestEvent()
 			break;
 		}
 		default: {
-			// Wire.write(1); // ack anyway
 			break;
 		}
 	}
-	#ifdef debug_PM2
-	SerialUSB.print("Reading value sent: ");
-	SerialUSB.print(rdg.f);
-	SerialUSB.print(" bytes: ");
-	SerialUSB.println(sizeof(rdg.b));
-	#endif
-	
 }
 /*
 	The Rain Gauge runs at 9600 bps :  (1041 uS per bit: 937.5 uS per byte (8 bits + stop))
@@ -426,39 +419,53 @@ void requestEvent()
 uint32_t myctr=0;
 void loop() {
 	SerialUSB.println("PM#2 Board is idling in the  Reading Loop");
+	digitalWrite(pinBLUE, LOW);
+	digitalWrite(pinGREEN, HIGH);
+	digitalWrite(pinRED, HIGH);	
 	delay(500);
 	#ifdef debug_PM2
 	SerialUSB.println(myctr);
 	#endif
-	
+	//floatbyte rdg;
 	if (wind.started && windRunning) {
 		if (micros() - timer1 > readingRefreshInterval) {
-			//#ifdef debug_PM2
+			
 			SerialUSB.println("Wind Reading ..........");
-			//#endif
+			
 			wind.getReading(); // send /receive 35 bytes at 38400 bps + processing time
+			/*
+			SerialUSB.print("Wind Speed:");
+			rdg=wind.getWind_Speed();
+			SerialUSB.println(rdg.f);
+			SerialUSB.print("Wind Dir:");
+			rdg=wind.getWind_Dir();
+			SerialUSB.println(rdg.f);
+			*/
 			timer1 = micros();
 		}
-	#ifdef debug_PM2
-	} else {
-		if (!wind.started) SerialUSB.println("Wind not started");
-		if (!windRunning) SerialUSB.println("Wind not running");
-	#endif
 	}
-
+	digitalWrite(pinBLUE, HIGH);
+	digitalWrite(pinGREEN, LOW);
+	digitalWrite(pinRED, HIGH);	
 	if (rain.checkStarted() && rainRunning) {
 		if (micros() - timer2 > readingRefreshInterval) {
-			//#ifdef debug_PM2
+			
 			SerialUSB.println("Rain Reading .........");
-			//#endif
+			
 			rain.getReading(); // 71 bytes @ 9600 bps + processing time
+			/*
+			rdg=rain.getAccReading();
+			SerialUSB.print("Rain Accum:");
+			SerialUSB.println(rdg.f);
+			rdg=rain.getEventAccReading();
+			SerialUSB.print("Rain Event Accum:");
+			SerialUSB.println(rdg.f);
+			rdg=rain.getTotalAccReading();
+			SerialUSB.print("Rain Total Accum:");
+			SerialUSB.println(rdg.f);
+			*/
 			timer2 = micros();
 		}
-	#ifdef debug_PM2
-	} else {
-		if (!rain.started) SerialUSB.println("Rain not started");
-		if (!rainRunning) SerialUSB.println("Rain not running");
-	#endif
 	}
 	myctr++;
 }

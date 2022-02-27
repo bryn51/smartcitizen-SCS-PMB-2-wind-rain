@@ -73,8 +73,10 @@ bool RadeonRain::begin(HardwareSerial *serial)
     myreading.intervalacc.f=0.00;
 
 	if (slowStart()) {
+		 SerialUSB.print("Rain  sensor was started:..");
 		started=true;
 	} else {
+		SerialUSB.print("Rain  sensor did not respond to start command:..");
 		started=false;
 	}
 	return started;
